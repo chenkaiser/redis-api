@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in sensitive values.
+# Never commit terraform.tfvars to source control.
+
+location    = "eastus"
+environment = "prod"
+project     = "redisapi"
+
+# Postgres
+postgres_admin_password = "REPLACE_ME_strong_password_here"
+
+# Images — replaced by CI pipeline after docker push to ACR
+redis_api_image        = "acrredisapiprod.azurecr.io/redis-api:latest"
+order_consumer_image   = "acrredisapiprod.azurecr.io/order-consumer:latest"
+
+# Scale (tune to your load)
+redis_api_min_replicas        = 2
+redis_api_max_replicas        = 10
+order_consumer_min_replicas   = 2
+order_consumer_max_replicas   = 10
+logstash_indexer_min_replicas = 2
+logstash_indexer_max_replicas = 4

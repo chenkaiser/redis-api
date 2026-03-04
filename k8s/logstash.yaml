@@ -1,0 +1,84 @@
+# Ingest tier — accepts GELF UDP from apps, forwards to log-kafka
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash-ingest
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: logstash-ingest
+  template:
+    metadata:
+      labels:
+        app: logstash-ingest
+    spec:
+      containers:
+        - name: logstash
+          image: logstash:8.13.0
+          ports:
+            - containerPort: 12201
+              protocol: UDP
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms256m -Xmx256m"
+            - name: PIPELINE_BATCH_SIZE
+              value: "125"
+            - name: PIPELINE_BATCH_DELAY
+              value: "5"
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/logstash/pipeline/logstash.conf
+              subPath: logstash.conf
+      volumes:
+        - name: config
+          configMap:
+            name: logstash-ingest-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash-ingest
+  namespace: redis-api
+spec:
+  selector:
+    app: logstash-ingest
+  ports:
+    - port: 12201
+      targetPort: 12201
+      protocol: UDP
+---
+# Indexer tier — reads from log-kafka, bulk-writes to Elasticsearch
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash-indexer
+  namespace: redis-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: logstash-indexer
+  template:
+    metadata:
+      labels:
+        app: logstash-indexer
+    spec:
+      containers:
+        - name: logstash
+          image: logstash:8.13.0
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: PIPELINE_BATCH_SIZE
+              value: "1000"
+            - name: PIPELINE_BATCH_DELAY
+              value: "50"
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/logstash/pipeline/logstash-indexer.conf
+              subPath: logstash-indexer.conf
+      volumes:
+        - name: config
+          configMap:
+            name: logstash-indexer-config
