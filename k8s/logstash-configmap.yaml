@@ -14,12 +14,15 @@ data:
 
     filter {
       mutate {
-        rename => { "host" => "container" }
+        rename => {
+          "host"  => "container"
+          "level" => "gelf_level"
+        }
       }
 
       json {
-        source        => "message"
-        target        => "pino"
+        source         => "message"
+        target         => "pino"
         tag_on_failure => ["_pino_parse_failure"]
       }
 
@@ -31,6 +34,11 @@ data:
             "msg"     => "%{[pino][msg]}"
           }
         }
+        if [pino][correlationId] {
+          mutate {
+            add_field => { "correlationId" => "%{[pino][correlationId]}" }
+          }
+        }
       }
     }
 
@@ -39,6 +47,9 @@ data:
         bootstrap_servers => "log-kafka:9093"
         topic_id          => "logs"
         codec             => json
+        security_protocol => "SASL_PLAINTEXT"
+        sasl_mechanism    => "PLAIN"
+        sasl_jaas_config  => "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\";"
       }
     }
 ---
@@ -57,13 +68,18 @@ data:
         consumer_threads  => 4
         codec             => json
         auto_offset_reset => "earliest"
+        security_protocol => "SASL_PLAINTEXT"
+        sasl_mechanism    => "PLAIN"
+        sasl_jaas_config  => "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\";"
       }
     }
 
     output {
       elasticsearch {
-        hosts  => ["http://elasticsearch:9200"]
-        index  => "app-logs-%{+YYYY.MM.dd}"
-        action => "index"
+        hosts    => ["http://elasticsearch:9200"]
+        user     => "elastic"
+        password => "${ELASTIC_PASSWORD}"
+        index    => "app-logs-%{+YYYY.MM.dd}"
+        action   => "index"
       }
     }

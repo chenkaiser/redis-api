@@ -23,26 +23,45 @@ spec:
       labels:
         app: postgres
     spec:
+      serviceAccountName: postgres
       containers:
         - name: postgres
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
-          envFrom:
-            - secretRef:
-                name: postgres-secret
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: POSTGRES_DB
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
-              command: [pg_isready, -U, postgres]
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
             initialDelaySeconds: 10
             periodSeconds: 5
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: postgres-data
+        - name: init-sql
+          configMap:
+            name: postgres-init
 ---
 apiVersion: v1
 kind: Service
@@ -55,3 +74,13 @@ spec:
   ports:
     - port: 5432
       targetPort: 5432
+---
+# Creates the 'keycloak' database alongside 'orders' on first init.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: redis-api
+data:
+  init-keycloak.sql: |
+    CREATE DATABASE keycloak;

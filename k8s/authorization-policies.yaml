@@ -1,0 +1,205 @@
+# Deny all traffic in the namespace by default, then explicitly allow
+# only the paths that are needed.  Istio evaluates: if any ALLOW policy
+# matches → allow; if only DENY or no policy matches → deny.
+#
+# Identity is the SPIFFE URI of the source pod's ServiceAccount:
+#   spiffe://cluster.local/ns/redis-api/sa/<serviceaccount-name>
+#
+# Note: TCP authorization (non-HTTP) uses source.principal only.
+# HTTP authorization can additionally match paths/methods.
+
+# ── Deny-all baseline ────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: redis-api
+spec: {}   # empty spec = deny everything (no rules = no matches = deny)
+
+---
+# ── Redis: only product-api may connect ──────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-redis
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/product-api"
+      to:
+        - operation:
+            ports: ["6379"]
+
+---
+# ── Kafka: product-api and order-consumer may connect ────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-kafka
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: kafka
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/product-api"
+              - "cluster.local/ns/redis-api/sa/order-consumer"
+      to:
+        - operation:
+            ports: ["9092"]
+
+---
+# ── Zookeeper: only kafka may connect ────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-zookeeper
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: zookeeper
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/kafka"
+      to:
+        - operation:
+            ports: ["2181"]
+
+---
+# ── Log-Kafka: logstash only ──────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-log-kafka
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: log-kafka
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/logstash"
+      to:
+        - operation:
+            ports: ["9093"]
+
+---
+# ── Log-Zookeeper: only log-kafka may connect ────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-log-zookeeper
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: log-zookeeper
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/log-kafka"
+      to:
+        - operation:
+            ports: ["2182"]
+
+---
+# ── PostgreSQL: order-consumer and keycloak may connect ──────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-postgres
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/order-consumer"
+              - "cluster.local/ns/redis-api/sa/keycloak"
+      to:
+        - operation:
+            ports: ["5432"]
+
+---
+# ── Elasticsearch: logstash (indexer), kibana, and setup job may connect ─────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-elasticsearch
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: elasticsearch
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/logstash"
+              - "cluster.local/ns/redis-api/sa/kibana"
+              - "cluster.local/ns/redis-api/sa/elasticsearch"
+      to:
+        - operation:
+            ports: ["9200"]
+
+---
+# ── Keycloak: product-api may reach Keycloak for JWKS and token exchange ─────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-keycloak
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: keycloak
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/redis-api/sa/product-api"
+              - "cluster.local/ns/redis-api/sa/keycloak"
+      to:
+        - operation:
+            ports: ["8080"]
+
+---
+# ── product-api: allow inbound from anywhere (NodePort / ingress) ─────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-product-api-inbound
+  namespace: redis-api
+spec:
+  selector:
+    matchLabels:
+      app: product-api
+  action: ALLOW
+  rules:
+    - {}   # allow all sources — external clients access via NodePort

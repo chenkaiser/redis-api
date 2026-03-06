@@ -13,6 +13,7 @@ spec:
       labels:
         app: logstash-ingest
     spec:
+      serviceAccountName: logstash
       containers:
         - name: logstash
           image: logstash:8.13.0
@@ -26,6 +27,16 @@ spec:
               value: "125"
             - name: PIPELINE_BATCH_DELAY
               value: "5"
+            - name: KAFKA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_USER
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_PASSWORD
           volumeMounts:
             - name: config
               mountPath: /usr/share/logstash/pipeline/logstash.conf
@@ -64,6 +75,7 @@ spec:
       labels:
         app: logstash-indexer
     spec:
+      serviceAccountName: logstash
       containers:
         - name: logstash
           image: logstash:8.13.0
@@ -74,6 +86,21 @@ spec:
               value: "1000"
             - name: PIPELINE_BATCH_DELAY
               value: "50"
+            - name: KAFKA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_USER
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_PASSWORD
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ELASTIC_PASSWORD
           volumeMounts:
             - name: config
               mountPath: /usr/share/logstash/pipeline/logstash-indexer.conf

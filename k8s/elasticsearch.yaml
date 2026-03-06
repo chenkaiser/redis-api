@@ -23,8 +23,8 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      serviceAccountName: elasticsearch
       initContainers:
-        # Elasticsearch requires vm.max_map_count >= 262144
         - name: sysctl
           image: busybox
           securityContext:
@@ -45,7 +45,16 @@ spec:
             - name: discovery.type
               value: single-node
             - name: xpack.security.enabled
+              value: "true"
+            - name: xpack.security.http.ssl.enabled
               value: "false"
+            - name: xpack.security.transport.ssl.enabled
+              value: "false"
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ELASTIC_PASSWORD
             - name: ES_JAVA_OPTS
               value: "-Xms1g -Xmx1g"
             - name: thread_pool.write.queue_size
@@ -59,9 +68,11 @@ spec:
             - name: data
               mountPath: /usr/share/elasticsearch/data
           readinessProbe:
-            httpGet:
-              path: /_cluster/health
-              port: 9200
+            exec:
+              command:
+                - sh
+                - -c
+                - "curl -sf -u elastic:\"$ELASTIC_PASSWORD\" http://localhost:9200/_cluster/health"
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 10
@@ -81,3 +92,38 @@ spec:
   ports:
     - port: 9200
       targetPort: 9200
+---
+# One-shot Job: sets the kibana_system password so Kibana can connect.
+# Kibana 8.x forbids the elastic superuser — kibana_system is the
+# correct service account.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elasticsearch-setup
+  namespace: redis-api
+spec:
+  template:
+    spec:
+      serviceAccountName: elasticsearch
+      restartPolicy: OnFailure
+      containers:
+        - name: setup
+          image: curlimages/curl:latest
+          env:
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: ELASTIC_PASSWORD
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf -u elastic:$ELASTIC_PASSWORD http://elasticsearch:9200/_cluster/health; do
+                echo "waiting for elasticsearch..."; sleep 5
+              done
+              curl -sf -u elastic:$ELASTIC_PASSWORD \
+                -X POST http://elasticsearch:9200/_security/user/kibana_system/_password \
+                -H 'Content-Type: application/json' \
+                -d "{\"password\":\"$ELASTIC_PASSWORD\"}"
+              echo "kibana_system password set."

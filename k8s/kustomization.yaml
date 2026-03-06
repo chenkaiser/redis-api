@@ -3,21 +3,14 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - serviceaccounts.yaml
+  - app-secrets.yaml
   - redis.yaml
   - postgres.yaml
   - zookeeper.yaml
   - kafka.yaml
-  - elasticsearch.yaml
-  - logstash-configmap.yaml
-  - logstash.yaml
-  - kibana.yaml
   - product-api.yaml
   - order-consumer.yaml
-
-# Secret values are read from secrets.env (gitignored — never commit real values).
-# To bootstrap: copy secrets.env.example → secrets.env and fill in real values.
-secretGenerator:
-  - name: postgres-secret
-    namespace: redis-api
-    envs:
-      - secrets.env
+  # Istio mesh policy
+  - peer-authentication.yaml
+  - authorization-policies.yaml

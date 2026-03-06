@@ -12,28 +12,44 @@ spec:
       labels:
         app: order-consumer
     spec:
+      serviceAccountName: order-consumer
       containers:
         - name: order-consumer
           image: order-consumer:latest
           imagePullPolicy: IfNotPresent
           env:
+            - name: NODE_ENV
+              value: production
+            # Kafka
             - name: KAFKA_BROKER
               value: kafka:9092
+            - name: KAFKA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_USER
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_PASSWORD
+            # Postgres
             - name: POSTGRES_HOST
               value: postgres
             - name: POSTGRES_PORT
               value: "5432"
             - name: POSTGRES_DB
-              value: orders
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: POSTGRES_DB
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
+                  name: app-secrets
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
+                  name: app-secrets
                   key: POSTGRES_PASSWORD
-            - name: NODE_ENV
-              value: production

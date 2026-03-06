@@ -12,6 +12,7 @@ spec:
       labels:
         app: zookeeper
     spec:
+      serviceAccountName: zookeeper
       containers:
         - name: zookeeper
           image: confluentinc/cp-zookeeper:7.6.0
@@ -54,6 +55,7 @@ spec:
       labels:
         app: log-zookeeper
     spec:
+      serviceAccountName: log-zookeeper
       containers:
         - name: log-zookeeper
           image: confluentinc/cp-zookeeper:7.6.0
