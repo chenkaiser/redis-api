@@ -11,6 +11,11 @@ async function bootstrap(): Promise<void> {
       client: {
         clientId: 'order-consumer',
         brokers: [process.env.KAFKA_BROKER ?? 'localhost:9092'],
+        sasl: {
+          mechanism: 'plain',
+          username: process.env.KAFKA_USER ?? '',
+          password: process.env.KAFKA_PASSWORD ?? '',
+        },
       },
       consumer: {
         groupId: 'order-consumer-group',

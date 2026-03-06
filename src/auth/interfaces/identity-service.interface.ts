@@ -1,18 +1,12 @@
 export const IDENTITY_SERVICE = 'IDENTITY_SERVICE';
 
+export { RegisterDto } from '../dto/register.dto';
+
 export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
   tokenType: string;
-}
-
-export interface RegisterDto {
-  username: string;
-  password: string;
-  email: string;
-  firstName: string;
-  lastName: string;
 }
 
 /**
@@ -26,5 +20,5 @@ export interface RegisterDto {
  */
 export interface IIdentityService {
   login(username: string, password: string): Promise<LoginResponse>;
-  register(dto: RegisterDto): Promise<void>;
+  register(dto: import('../dto/register.dto').RegisterDto): Promise<void>;
 }

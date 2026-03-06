@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { AUTH_PROVIDER } from './interfaces/auth-provider.interface';
@@ -13,6 +13,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { BloomFilterService } from './bloom-filter.service';
 import { AuthController } from './auth.controller';
 import { RedisModule } from '../redis/redis.module';
+import { RateLimiterMiddleware } from '../redis/rate-limiter.middleware';
 
 /**
  * Selects the active OIDC provider at startup via AUTH_PROVIDER_TYPE env var.
@@ -60,4 +61,8 @@ import { RedisModule } from '../redis/redis.module';
   ],
   exports: [JwtAuthGuard, RolesGuard, PassportModule, AUTH_PROVIDER],
 })
-export class AuthModule {}
+export class AuthModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RateLimiterMiddleware).forRoutes('auth');
+  }
+}

@@ -15,6 +15,11 @@ import { KafkaProducerService } from './kafka-producer.service';
             client: {
               clientId: 'redis-api-producer',
               brokers: [config.getOrThrow<string>('KAFKA_BROKER')],
+              sasl: {
+                mechanism: 'plain',
+                username: config.getOrThrow<string>('KAFKA_USER'),
+                password: config.getOrThrow<string>('KAFKA_PASSWORD'),
+              },
             },
           },
         }),

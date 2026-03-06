@@ -11,11 +11,12 @@ import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { Public } from './decorators/public.decorator';
 import { BloomFilterService } from './bloom-filter.service';
+import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import {
   IDENTITY_SERVICE,
   IIdentityService,
   LoginResponse,
-  RegisterDto,
 } from './interfaces/identity-service.interface';
 
 @Public()
@@ -34,9 +35,7 @@ export class AuthController {
   @ApiBody({ schema: { example: { username: 'testuser', password: 'testuser123' } } })
   @ApiResponse({ status: 200, description: 'Login successful', schema: { example: { accessToken: '...', refreshToken: '...', expiresIn: 300, tokenType: 'Bearer' } } })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(
-    @Body() body: { username: string; password: string },
-  ): Promise<LoginResponse> {
+  async login(@Body() body: LoginDto): Promise<LoginResponse> {
     this.logger.info({ username: body.username }, 'POST /auth/login');
     return this.identity.login(body.username, body.password);
   }

@@ -19,6 +19,8 @@ export const configValidationSchema = Joi.object({
 
   // Kafka
   KAFKA_BROKER: Joi.string().default('localhost:9092'),
+  KAFKA_USER: Joi.string().default('admin'),
+  KAFKA_PASSWORD: Joi.string().required(),
 
   // Keycloak (required when AUTH_PROVIDER_TYPE=keycloak)
   KEYCLOAK_JWKS_URI: Joi.string().default(
