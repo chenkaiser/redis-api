@@ -85,6 +85,7 @@ services:
       KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:29092,HEALTHCHECK://localhost:29091
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
       KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
       KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -123,6 +124,7 @@ services:
       KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9093,INTERNAL://log-kafka:29093
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
       KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
       KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -211,16 +213,32 @@ services:
     deploy:
       replicas: 2
 
-  kibana:
-    image: kibana:8.13.0
+  # Sets the kibana_system built-in user password so Kibana can connect
+  # without using the elastic superuser (blocked in Kibana 8.x).
+  elasticsearch-setup:
+    image: curlimages/curl:latest
     depends_on:
       elasticsearch:
         condition: service_healthy
+    restart: "no"
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+    command: >
+      sh -c "curl -s -u elastic:$$ELASTIC_PASSWORD -X POST
+      http://elasticsearch:9200/_security/user/kibana_system/_password
+      -H 'Content-Type: application/json'
+      -d '{\"password\":\"$$ELASTIC_PASSWORD\"}'"
+
+  kibana:
+    image: kibana:8.13.0
+    depends_on:
+      elasticsearch-setup:
+        condition: service_completed_successfully
     ports:
       - "5601:5601"
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
-      ELASTICSEARCH_USERNAME: elastic
+      ELASTICSEARCH_USERNAME: kibana_system
       ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD}
 
   # ── Application services ────────────────────────────────────────────────────
