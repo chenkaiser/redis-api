@@ -13,3 +13,11 @@ resources:
   - kibana.yaml
   - product-api.yaml
   - order-consumer.yaml
+
+# Secret values are read from secrets.env (gitignored — never commit real values).
+# To bootstrap: copy secrets.env.example → secrets.env and fill in real values.
+secretGenerator:
+  - name: postgres-secret
+    namespace: redis-api
+    envs:
+      - secrets.env
