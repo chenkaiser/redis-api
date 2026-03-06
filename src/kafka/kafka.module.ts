@@ -1,24 +1,27 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { KafkaController } from './kafka.controller';
 import { KafkaProducerService } from './kafka-producer.service';
 
 @Module({
   imports: [
-    ClientsModule.register([
+    ClientsModule.registerAsync([
       {
         name: 'KAFKA_CLIENT',
-        transport: Transport.KAFKA,
-        options: {
-          client: {
-            clientId: 'redis-api-producer',
-            brokers: [process.env.KAFKA_BROKER ?? 'localhost:9092'],
+        imports: [ConfigModule],
+        useFactory: (config: ConfigService) => ({
+          transport: Transport.KAFKA,
+          options: {
+            client: {
+              clientId: 'redis-api-producer',
+              brokers: [config.getOrThrow<string>('KAFKA_BROKER')],
+            },
           },
-        },
+        }),
+        inject: [ConfigService],
       },
     ]),
   ],
-  controllers: [KafkaController],
   providers: [KafkaProducerService],
   exports: [KafkaProducerService],
 })

@@ -11,6 +11,7 @@ async function bootstrap(): Promise<void> {
     .setTitle('Redis API')
     .setDescription('Inventory management with distributed locking, rate limiting, and Kafka event publishing')
     .setVersion('1.0')
+    .addBearerAuth()
     .build();
   SwaggerModule.setup('api', app, SwaggerModule.createDocument(app, config));
 

@@ -6,8 +6,11 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { randomUUID } from 'crypto';
+import { getCorrelationId } from '../common/correlation-id.storage';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { InventoryEventDto } from '../kafka/dto/inventory-event.dto';
 import { KafkaProducerService } from '../kafka/kafka-producer.service';
 import { RedisService } from '../redis/redis.service';
@@ -19,6 +22,7 @@ const LOCK_TTL_MS      = 300;  // critical section = 1 Redis eval (~1 ms); Kafka
 const LOCK_RETRY_COUNT = 5;
 const LOCK_RETRY_MS    = 50;   // back-off: 50→100→200→400→800 ms (~1.5 s total)
 
+@ApiBearerAuth()
 @ApiTags('product')
 @Controller('product')
 export class ProductController {
@@ -28,9 +32,12 @@ export class ProductController {
     private readonly kafkaProducerService: KafkaProducerService,
   ) {}
 
+  @Roles('product:write')
   @ApiOperation({ summary: 'Consume one inventory item', description: 'Acquires a distributed lock, decrements stock atomically, and publishes an event to Kafka. Retries lock acquisition up to 5 times with exponential back-off.' })
   @ApiResponse({ status: 200, description: 'Item consumed successfully' })
   @ApiResponse({ status: 200, description: 'Out of stock', schema: { example: { success: false, remaining: 0, message: 'no inventory available' } } })
+  @ApiResponse({ status: 401, description: 'Missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Insufficient roles — requires product:write' })
   @ApiResponse({ status: 503, description: 'Lock contention — all retries exhausted' })
   @ApiResponse({ status: 503, description: 'Kafka unavailable — inventory decrement rolled back' })
   @Post('use-item')
@@ -75,6 +82,7 @@ export class ProductController {
         remaining,
         success: true,
         message,
+        correlationId: getCorrelationId() ?? randomUUID(),
       });
     } catch (err) {
       // Kafka unavailable — undo the Redis decrement so inventory stays consistent
@@ -90,8 +98,11 @@ export class ProductController {
     return { success: true, remaining, message };
   }
 
+  @Roles('product:read')
   @ApiOperation({ summary: 'Get current inventory' })
   @ApiResponse({ status: 200, schema: { example: { remaining: 999 } } })
+  @ApiResponse({ status: 401, description: 'Missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Insufficient roles — requires product:read' })
   @Get('inventory')
   async getInventory() {
     this.logger.info('GET /product/inventory');
@@ -101,8 +112,11 @@ export class ProductController {
     return { remaining };
   }
 
+  @Roles('product:admin')
   @ApiOperation({ summary: 'Reset inventory to initial stock (1000)' })
   @ApiResponse({ status: 200, schema: { example: { remaining: 1000, message: 'Inventory reset.' } } })
+  @ApiResponse({ status: 401, description: 'Missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Insufficient roles — requires product:admin' })
   @Delete('inventory')
   async resetInventory() {
     this.logger.info('DELETE /product/inventory');

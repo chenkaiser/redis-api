@@ -21,6 +21,9 @@ export class Order {
   @Column({ type: 'text', name: 'kafka_offset' })
   kafkaOffset!: string;
 
+  @Column({ type: 'text', name: 'correlation_id', nullable: true })
+  correlationId!: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

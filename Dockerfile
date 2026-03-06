@@ -10,4 +10,4 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
-CMD ["node", "dist/src/main"]
+CMD ["node", "dist/main"]

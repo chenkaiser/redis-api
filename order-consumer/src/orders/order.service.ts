@@ -47,6 +47,7 @@ export class OrderService implements OnModuleDestroy {
         remaining: dto.remaining,
         success: dto.success,
         message: dto.message,
+        correlationId: dto.correlationId ?? null,
         kafkaPartition: context.getPartition(),
         kafkaOffset: context.getMessage().offset,
       }),
