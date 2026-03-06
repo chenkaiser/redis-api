@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import Redis from 'ioredis';
 import { randomUUID } from 'crypto';
@@ -62,10 +63,12 @@ export class RedisService implements OnModuleDestroy {
 
   constructor(
     @InjectPinoLogger(RedisService.name) private readonly logger: PinoLogger,
+    private readonly config: ConfigService,
   ) {
     this.client = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      host: config.getOrThrow<string>('REDIS_HOST'),
+      port: config.getOrThrow<number>('REDIS_PORT'),
+      password: config.getOrThrow<string>('REDIS_PASSWORD'),
     });
   }
 
@@ -86,6 +89,16 @@ export class RedisService implements OnModuleDestroy {
 
   async keys(pattern: string): Promise<string[]> {
     return this.client.keys(pattern);
+  }
+
+  // ── Bloom filter primitives ────────────────────────────────────────────────
+
+  async setbit(key: string, offset: number, value: 0 | 1): Promise<number> {
+    return this.client.setbit(key, offset, value);
+  }
+
+  async getbit(key: string, offset: number): Promise<number> {
+    return this.client.getbit(key, offset);
   }
 
   // Leaky bucket rate limiter.

@@ -1,16 +1,26 @@
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
-    command: start-dev --import-realm
+    # 'start' (production mode) requires a real DB — see KC_DB_* below.
+    # Drop the keycloak-data volume if migrating from start-dev (H2 → Postgres).
+    command: start --import-realm
     ports:
       - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HTTP_PORT: 8080
-      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Persist realm data in Postgres instead of the embedded H2 database.
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - keycloak-data:/opt/keycloak/data
@@ -19,7 +29,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-      start_period: 60s
+      start_period: 90s
 
   # Runs once after Keycloak is healthy and overwrites the placeholder client
   # secrets (set in realm-export.json) with the real values from .env.
@@ -42,10 +52,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Password is injected at compose time from .env — not stored in the image.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis-data:/data
+    # Port not exposed to host — only reachable within the Docker network.
 
   # ── App Kafka (business events) ─────────────────────────────────────────────
   # Carries: inventory.item-used
@@ -56,15 +67,13 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
+    # Port not exposed to host — internal use only.
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
       - zookeeper
-    ports:
-      - "9092:9092"
+    # Port not exposed to host — apps connect via PLAINTEXT_INTERNAL://kafka:29092.
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -92,15 +101,13 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2182
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2182:2182"
+    # Port not exposed to host — internal use only.
 
   log-kafka:
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
       - log-zookeeper
-    ports:
-      - "9093:9093"
+    # Port not exposed to host — logstash connects via PLAINTEXT_INTERNAL://log-kafka:29093.
     environment:
       KAFKA_BROKER_ID: 2
       KAFKA_ZOOKEEPER_CONNECT: log-zookeeper:2182
@@ -117,30 +124,39 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    ports:
-      - "5432:5432"
+    # Port not exposed to host — only reachable within the Docker network.
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Creates the 'keycloak' database on first init (only runs on empty data dir).
+      - ./postgres/init-keycloak.sql:/docker-entrypoint-initdb.d/init-keycloak.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   # ── ELK ────────────────────────────────────────────────────────────────────
 
   elasticsearch:
     image: elasticsearch:8.13.0
+    # Port not exposed to host — logstash and kibana connect internally.
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
       ES_JAVA_OPTS: "-Xms1g -Xmx1g"
       thread_pool.write.queue_size: "1000"
-    ports:
-      - "9200:9200"
     volumes:
       - es-data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -152,6 +168,7 @@ services:
     depends_on:
       - log-kafka
     ports:
+      # Must be bound to host — Docker daemon sends GELF logs here.
       - "12201:12201/udp"
     volumes:
       - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
@@ -175,6 +192,7 @@ services:
       LS_JAVA_OPTS: "-Xms512m -Xmx512m"
       PIPELINE_BATCH_SIZE: "1000"
       PIPELINE_BATCH_DELAY: "50"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
     deploy:
       replicas: 2
 
@@ -187,6 +205,8 @@ services:
       - "5601:5601"
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+      ELASTICSEARCH_USERNAME: elastic
+      ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD}
 
   # ── Application services ────────────────────────────────────────────────────
 
@@ -209,6 +229,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       KAFKA_BROKER: kafka:29092
       NODE_ENV: production
       AUTH_PROVIDER_TYPE: keycloak
@@ -233,9 +254,9 @@ services:
       dockerfile: Dockerfile
     depends_on:
       kafka:
-        condition: service_healthy  # business events
+        condition: service_healthy
       postgres:
-        condition: service_started
+        condition: service_healthy
       logstash-ingest:
         condition: service_started
     environment:

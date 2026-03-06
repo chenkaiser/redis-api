@@ -3,12 +3,17 @@ import { LoggerModule } from 'nestjs-pino';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from './orders/order.entity';
 import { OrderModule } from './orders/order.module';
+import { getCorrelationId } from './common/correlation-id.storage';
 
 @Module({
   imports: [
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.LOG_LEVEL ?? 'info',
+        mixin: () => {
+          const correlationId = getCorrelationId();
+          return correlationId ? { correlationId } : {};
+        },
         transport:
           process.env.NODE_ENV !== 'production'
             ? { target: 'pino-pretty', options: { singleLine: true } }
@@ -23,7 +28,7 @@ import { OrderModule } from './orders/order.module';
       password: process.env.POSTGRES_PASSWORD ?? 'postgres',
       database: process.env.POSTGRES_DB ?? 'orders',
       entities: [Order],
-      synchronize: true,
+      synchronize: process.env.NODE_ENV !== 'production',
     }),
     OrderModule,
   ],
