@@ -9,6 +9,12 @@ resources:
   - postgres.yaml
   - zookeeper.yaml
   - kafka.yaml
+  - elasticsearch.yaml
+  - logstash-configmap.yaml
+  - logstash.yaml
+  - kibana.yaml
+  - keycloak-configmap.yaml
+  - keycloak.yaml
   - product-api.yaml
   - order-consumer.yaml
   # Istio mesh policy

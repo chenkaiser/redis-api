@@ -58,10 +58,6 @@ services:
       - redis-data:/data
     # Port not exposed to host — only reachable within the Docker network.
 
-  # ── App Kafka (business events) ─────────────────────────────────────────────
-  # Carries: inventory.item-used
-  # Long retention, replication factor 1 (dev) → 3 (prod), no log traffic.
-
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     environment:
@@ -73,7 +69,7 @@ services:
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
       - zookeeper
-    # Port not exposed to host — apps connect via PLAINTEXT_INTERNAL://kafka:29092.
+    # Port not exposed to host — apps connect via INTERNAL://kafka:29092.
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -99,41 +95,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-
-  # ── Log Kafka (logging pipeline) ────────────────────────────────────────────
-  # Carries: logs topic only
-  # Short retention (4 h), high throughput, isolated from business cluster so a
-  # logging burst cannot starve or destabilise order processing.
-
-  log-zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2182
-      ZOOKEEPER_TICK_TIME: 2000
-    # Port not exposed to host — internal use only.
-
-  log-kafka:
-    image: confluentinc/cp-kafka:7.6.0
-    depends_on:
-      - log-zookeeper
-    # Port not exposed to host — logstash connects via PLAINTEXT_INTERNAL://log-kafka:29093.
-    environment:
-      KAFKA_BROKER_ID: 2
-      KAFKA_ZOOKEEPER_CONNECT: log-zookeeper:2182
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:SASL_PLAINTEXT,INTERNAL:SASL_PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9093,INTERNAL://log-kafka:29093
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
-      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
-      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
-      KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\" user_${KAFKA_USER}=\"${KAFKA_PASSWORD}\";"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      # Log topic — 4 partitions (matches max logstash-indexer replicas),
-      # 4-hour retention so disk never grows unboundedly
-      KAFKA_CREATE_TOPICS: "logs:4:1"
-      KAFKA_LOG_RETENTION_HOURS: "4"
-      KAFKA_LOG_RETENTION_BYTES: "1073741824"   # 1 GB hard cap per partition
 
   postgres:
     image: postgres:16-alpine
@@ -175,43 +136,26 @@ services:
       retries: 10
       start_period: 60s
 
-  # Ingest tier — accepts GELF from Docker, forwards to log-kafka.
-  logstash-ingest:
+  # Single Logstash instance: accepts GELF from Docker, writes directly to
+  # Elasticsearch. A persisted queue buffers events on disk if ES is slow or
+  # temporarily unavailable — no intermediate Kafka cluster needed.
+  logstash:
     image: logstash:8.13.0
     depends_on:
-      - log-kafka
+      elasticsearch:
+        condition: service_healthy
     ports:
       # Must be bound to host — Docker daemon sends GELF logs here.
       - "12201:12201/udp"
     volumes:
       - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
     environment:
-      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
-      PIPELINE_BATCH_SIZE: "125"
-      PIPELINE_BATCH_DELAY: "5"
-      KAFKA_USER: ${KAFKA_USER}
-      KAFKA_PASSWORD: ${KAFKA_PASSWORD}
-
-  # Indexer tier — reads from log-kafka, bulk-writes to Elasticsearch.
-  # Scale with: docker compose up --scale logstash-indexer=4
-  logstash-indexer:
-    image: logstash:8.13.0
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-      log-kafka:
-        condition: service_started
-    volumes:
-      - ./logstash/pipeline/logstash-indexer.conf:/usr/share/logstash/pipeline/logstash-indexer.conf:ro
-    environment:
       LS_JAVA_OPTS: "-Xms512m -Xmx512m"
       PIPELINE_BATCH_SIZE: "1000"
       PIPELINE_BATCH_DELAY: "50"
+      QUEUE_TYPE: "persisted"
+      QUEUE_MAX_BYTES: "1gb"
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
-      KAFKA_USER: ${KAFKA_USER}
-      KAFKA_PASSWORD: ${KAFKA_PASSWORD}
-    deploy:
-      replicas: 2
 
   # Sets the kibana_system built-in user password so Kibana can connect
   # without using the elastic superuser (blocked in Kibana 8.x).
@@ -251,7 +195,7 @@ services:
     depends_on:
       redis:
         condition: service_started
-      logstash-ingest:
+      logstash:
         condition: service_started
       kafka:
         condition: service_healthy
@@ -292,7 +236,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      logstash-ingest:
+      logstash:
         condition: service_started
     environment:
       KAFKA_BROKER: kafka:29092

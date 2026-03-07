@@ -1,17 +1,19 @@
-# Ingest tier — accepts GELF UDP from apps, forwards to log-kafka
+# Single Logstash instance: accepts GELF from pods, writes directly to
+# Elasticsearch. A persisted queue buffers events on disk if ES is slow
+# or temporarily unavailable — no intermediate Kafka cluster needed.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: logstash-ingest
+  name: logstash
   namespace: redis-api
 spec:
   selector:
     matchLabels:
-      app: logstash-ingest
+      app: logstash
   template:
     metadata:
       labels:
-        app: logstash-ingest
+        app: logstash
     spec:
       serviceAccountName: logstash
       containers:
@@ -22,80 +24,15 @@ spec:
               protocol: UDP
           env:
             - name: LS_JAVA_OPTS
-              value: "-Xms256m -Xmx256m"
-            - name: PIPELINE_BATCH_SIZE
-              value: "125"
-            - name: PIPELINE_BATCH_DELAY
-              value: "5"
-            - name: KAFKA_USER
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: KAFKA_USER
-            - name: KAFKA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: KAFKA_PASSWORD
-          volumeMounts:
-            - name: config
-              mountPath: /usr/share/logstash/pipeline/logstash.conf
-              subPath: logstash.conf
-      volumes:
-        - name: config
-          configMap:
-            name: logstash-ingest-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: logstash-ingest
-  namespace: redis-api
-spec:
-  selector:
-    app: logstash-ingest
-  ports:
-    - port: 12201
-      targetPort: 12201
-      protocol: UDP
----
-# Indexer tier — reads from log-kafka, bulk-writes to Elasticsearch
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: logstash-indexer
-  namespace: redis-api
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: logstash-indexer
-  template:
-    metadata:
-      labels:
-        app: logstash-indexer
-    spec:
-      serviceAccountName: logstash
-      containers:
-        - name: logstash
-          image: logstash:8.13.0
-          env:
-            - name: LS_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
             - name: PIPELINE_BATCH_SIZE
               value: "1000"
             - name: PIPELINE_BATCH_DELAY
               value: "50"
-            - name: KAFKA_USER
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: KAFKA_USER
-            - name: KAFKA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: KAFKA_PASSWORD
+            - name: QUEUE_TYPE
+              value: "persisted"
+            - name: QUEUE_MAX_BYTES
+              value: "1gb"
             - name: ELASTIC_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -103,9 +40,29 @@ spec:
                   key: ELASTIC_PASSWORD
           volumeMounts:
             - name: config
-              mountPath: /usr/share/logstash/pipeline/logstash-indexer.conf
-              subPath: logstash-indexer.conf
+              mountPath: /usr/share/logstash/pipeline/logstash.conf
+              subPath: logstash.conf
+          readinessProbe:
+            httpGet:
+              path: /_node/stats
+              port: 9600
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 10
       volumes:
         - name: config
           configMap:
-            name: logstash-indexer-config
+            name: logstash-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: redis-api
+spec:
+  selector:
+    app: logstash
+  ports:
+    - port: 12201
+      targetPort: 12201
+      protocol: UDP

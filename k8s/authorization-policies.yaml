@@ -81,48 +81,6 @@ spec:
             ports: ["2181"]
 
 ---
-# ── Log-Kafka: logstash only ──────────────────────────────────────────────────
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-log-kafka
-  namespace: redis-api
-spec:
-  selector:
-    matchLabels:
-      app: log-kafka
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            principals:
-              - "cluster.local/ns/redis-api/sa/logstash"
-      to:
-        - operation:
-            ports: ["9093"]
-
----
-# ── Log-Zookeeper: only log-kafka may connect ────────────────────────────────
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-log-zookeeper
-  namespace: redis-api
-spec:
-  selector:
-    matchLabels:
-      app: log-zookeeper
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            principals:
-              - "cluster.local/ns/redis-api/sa/log-kafka"
-      to:
-        - operation:
-            ports: ["2182"]
-
----
 # ── PostgreSQL: order-consumer and keycloak may connect ──────────────────────
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -145,7 +103,7 @@ spec:
             ports: ["5432"]
 
 ---
-# ── Elasticsearch: logstash (indexer), kibana, and setup job may connect ─────
+# ── Elasticsearch: logstash, kibana, and setup job may connect ───────────────
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:

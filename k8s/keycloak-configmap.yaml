@@ -1,0 +1,182 @@
+# realm-export.json — imported by Keycloak on first boot (--import-realm).
+# Client secrets are placeholders; the keycloak-init Job overwrites them
+# with the real values from app-secrets after Keycloak is healthy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: redis-api
+data:
+  realm-export.json: |
+    {
+      "realm": "redis-api",
+      "enabled": true,
+      "accessTokenLifespan": 300,
+      "ssoSessionIdleTimeout": 1800,
+      "ssoSessionMaxLifespan": 36000,
+      "verifyEmail": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "requiredActions": [
+        { "alias": "CONFIGURE_TOTP",       "name": "Configure OTP",        "providerId": "CONFIGURE_TOTP",       "enabled": true,  "defaultAction": false, "priority": 10, "config": {} },
+        { "alias": "UPDATE_PASSWORD",      "name": "Update Password",      "providerId": "UPDATE_PASSWORD",      "enabled": true,  "defaultAction": false, "priority": 30, "config": {} },
+        { "alias": "UPDATE_PROFILE",       "name": "Update Profile",       "providerId": "UPDATE_PROFILE",       "enabled": true,  "defaultAction": false, "priority": 40, "config": {} },
+        { "alias": "VERIFY_EMAIL",         "name": "Verify Email",         "providerId": "VERIFY_EMAIL",         "enabled": true,  "defaultAction": false, "priority": 50, "config": {} },
+        { "alias": "VERIFY_PROFILE",       "name": "Verify Profile",       "providerId": "VERIFY_PROFILE",       "enabled": true,  "defaultAction": false, "priority": 90, "config": {} },
+        { "alias": "delete_account",       "name": "Delete Account",       "providerId": "delete_account",       "enabled": false, "defaultAction": false, "priority": 60, "config": {} },
+        { "alias": "terms_and_conditions", "name": "Terms and Conditions", "providerId": "terms_and_conditions", "enabled": false, "defaultAction": false, "priority": 20, "config": {} }
+      ],
+      "roles": {
+        "realm": [
+          { "name": "product:read",  "description": "Read inventory data",                                    "composite": false, "clientRole": false },
+          { "name": "product:write", "description": "Consume inventory items and publish events",             "composite": false, "clientRole": false },
+          { "name": "product:admin", "description": "Full admin access — includes product:read and product:write",
+            "composite": true, "composites": { "realm": ["product:read", "product:write"] }, "clientRole": false }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "product-api",
+          "name": "Product API (Resource Server)",
+          "description": "Resource server — validates incoming bearer tokens. Does not issue tokens.",
+          "enabled": true, "publicClient": true, "bearerOnly": false,
+          "standardFlowEnabled": false, "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false, "serviceAccountsEnabled": false,
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "order-consumer",
+          "name": "Order Consumer (Service Account)",
+          "description": "Confidential client for service-to-service calls using Client Credentials flow.",
+          "enabled": true, "publicClient": false, "secret": "to-be-set-by-init",
+          "bearerOnly": false, "standardFlowEnabled": false, "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "audience-product-api", "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper", "consentRequired": false,
+              "config": { "included.client.audience": "product-api", "id.token.claim": "false", "access.token.claim": "true" }
+            }
+          ]
+        },
+        {
+          "clientId": "auth-service",
+          "name": "Auth Service (User Management)",
+          "description": "Confidential client used by product-api to create users via Admin API.",
+          "enabled": true, "publicClient": false, "secret": "to-be-set-by-init",
+          "bearerOnly": false, "standardFlowEnabled": false, "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "api-test",
+          "name": "API Test Client (Dev Only)",
+          "description": "Public client with Resource Owner Password Grant — for local testing and Swagger UI only. Remove in production.",
+          "enabled": true, "publicClient": true, "bearerOnly": false,
+          "standardFlowEnabled": false, "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": true, "serviceAccountsEnabled": false,
+          "protocol": "openid-connect",
+          "protocolMappers": [
+            {
+              "name": "audience-product-api", "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper", "consentRequired": false,
+              "config": { "included.client.audience": "product-api", "id.token.claim": "false", "access.token.claim": "true" }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "testuser", "firstName": "Test", "lastName": "User",
+          "enabled": true, "emailVerified": true, "email": "testuser@local.dev",
+          "requiredActions": [],
+          "credentials": [{ "type": "password", "value": "testuser123", "temporary": false }],
+          "realmRoles": ["product:write"]
+        },
+        {
+          "username": "adminuser", "firstName": "Admin", "lastName": "User",
+          "enabled": true, "emailVerified": true, "email": "adminuser@local.dev",
+          "requiredActions": [],
+          "credentials": [{ "type": "password", "value": "adminuser123", "temporary": false }],
+          "realmRoles": ["product:admin"]
+        },
+        {
+          "username": "service-account-order-consumer", "enabled": true,
+          "serviceAccountClientId": "order-consumer", "requiredActions": [],
+          "realmRoles": ["product:write"]
+        },
+        {
+          "username": "service-account-auth-service", "enabled": true,
+          "serviceAccountClientId": "auth-service", "requiredActions": [],
+          "clientRoles": { "realm-management": ["manage-users", "view-users", "query-users", "view-realm"] }
+        }
+      ]
+    }
+---
+# init.py — runs once after Keycloak is healthy to replace placeholder
+# client secrets with real values sourced from app-secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-init-script
+  namespace: redis-api
+data:
+  init.py: |
+    #!/usr/bin/env python3
+    import json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+    KC_URL              = os.environ["KEYCLOAK_INTERNAL_URL"].rstrip("/")
+    REALM               = os.environ["KEYCLOAK_REALM"]
+    ADMIN_USER          = os.environ["KEYCLOAK_ADMIN_USER"]
+    ADMIN_PASSWORD      = os.environ["KEYCLOAK_ADMIN_PASSWORD"]
+    ADMIN_CLIENT_SECRET = os.environ["KEYCLOAK_ADMIN_CLIENT_SECRET"]
+    ORDER_CONSUMER_SECRET = os.environ["ORDER_CONSUMER_CLIENT_SECRET"]
+
+    def wait_for_keycloak(timeout_s=120):
+        url = f"{KC_URL}/realms/{REALM}"
+        print(f"Waiting for Keycloak at {url} ...", flush=True)
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(url, timeout=3)
+                print("Keycloak is ready.", flush=True)
+                return
+            except Exception:
+                time.sleep(2)
+        print("ERROR: Timed out waiting for Keycloak.", file=sys.stderr)
+        sys.exit(1)
+
+    def get_admin_token():
+        url  = f"{KC_URL}/realms/master/protocol/openid-connect/token"
+        data = urllib.parse.urlencode({"grant_type": "password", "client_id": "admin-cli",
+                                       "username": ADMIN_USER, "password": ADMIN_PASSWORD}).encode()
+        with urllib.request.urlopen(urllib.request.Request(url, data=data)) as r:
+            return json.loads(r.read())["access_token"]
+
+    def get_client_uuid(token, client_id):
+        url = f"{KC_URL}/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(client_id)}"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req) as r:
+            clients = json.loads(r.read())
+        if not clients:
+            raise ValueError(f"Client '{client_id}' not found in realm '{REALM}'")
+        return clients[0]["id"]
+
+    def update_client_secret(token, client_id, secret):
+        uuid = get_client_uuid(token, client_id)
+        url  = f"{KC_URL}/admin/realms/{REALM}/clients/{uuid}/client-secret"
+        data = json.dumps({"value": secret}).encode()
+        req  = urllib.request.Request(url, data=data, method="POST",
+                   headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req):
+            pass
+        print(f"Secret updated for client '{client_id}'.", flush=True)
+
+    wait_for_keycloak()
+    print("Obtaining admin token ...", flush=True)
+    token = get_admin_token()
+    update_client_secret(token, "auth-service",   ADMIN_CLIENT_SECRET)
+    update_client_secret(token, "order-consumer", ORDER_CONSUMER_SECRET)
+    print("Keycloak init complete.", flush=True)

@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: logstash-ingest-config
+  name: logstash-config
   namespace: redis-api
 data:
   logstash.conf: |
@@ -13,6 +13,9 @@ data:
     }
 
     filter {
+      # GELF host field = container name — promote to a top-level field.
+      # GELF level field = numeric severity (0-7) — rename so it does not
+      # conflict with the pino string level ("info", "warn", …) added below.
       mutate {
         rename => {
           "host"  => "container"
@@ -20,12 +23,14 @@ data:
         }
       }
 
+      # Parse the pino JSON payload that arrives in the 'message' field
       json {
-        source         => "message"
-        target         => "pino"
+        source  => "message"
+        target  => "pino"
         tag_on_failure => ["_pino_parse_failure"]
       }
 
+      # Lift the key pino fields to the top level for easy filtering in Kibana
       if [pino] {
         mutate {
           add_field => {
@@ -39,38 +44,6 @@ data:
             add_field => { "correlationId" => "%{[pino][correlationId]}" }
           }
         }
-      }
-    }
-
-    output {
-      kafka {
-        bootstrap_servers => "log-kafka:9093"
-        topic_id          => "logs"
-        codec             => json
-        security_protocol => "SASL_PLAINTEXT"
-        sasl_mechanism    => "PLAIN"
-        sasl_jaas_config  => "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\";"
-      }
-    }
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: logstash-indexer-config
-  namespace: redis-api
-data:
-  logstash-indexer.conf: |
-    input {
-      kafka {
-        bootstrap_servers => "log-kafka:9093"
-        topics            => ["logs"]
-        group_id          => "logstash-indexer"
-        consumer_threads  => 4
-        codec             => json
-        auto_offset_reset => "earliest"
-        security_protocol => "SASL_PLAINTEXT"
-        sasl_mechanism    => "PLAIN"
-        sasl_jaas_config  => "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KAFKA_USER}\" password=\"${KAFKA_PASSWORD}\";"
       }
     }
 
