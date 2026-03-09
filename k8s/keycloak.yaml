@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: keycloak-data
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -13,7 +13,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: keycloak
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     matchLabels:
@@ -52,7 +52,7 @@ spec:
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL
-              value: jdbc:postgresql://postgres:5432/keycloak
+              value: jdbc:postgresql://postgres.redis-api-infra.svc.cluster.local:5432/keycloak
             - name: KC_DB_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -63,6 +63,13 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
           volumeMounts:
             - name: realm
               mountPath: /opt/keycloak/data/import/realm-export.json
@@ -80,7 +87,21 @@ spec:
                   grep -q '"realm"' <&3
             initialDelaySeconds: 60
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 20
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - >
+                  exec 3<>/dev/tcp/localhost/8080 &&
+                  echo -e 'GET /health/live HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 &&
+                  grep -q '200' <&3
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: realm
           configMap:
@@ -93,7 +114,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: keycloak
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     app: keycloak
@@ -101,13 +122,11 @@ spec:
     - port: 8080
       targetPort: 8080
 ---
-# Job that sets the real client secrets after the realm is imported.
-# Mirrors the docker-compose keycloak-init service.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: keycloak-init
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   template:
     spec:
@@ -119,7 +138,7 @@ spec:
           command: ["python", "/init/init.py"]
           env:
             - name: KEYCLOAK_INTERNAL_URL
-              value: http://keycloak:8080
+              value: http://keycloak.redis-api-infra.svc.cluster.local:8080
             - name: KEYCLOAK_REALM
               value: redis-api
             - name: KEYCLOAK_ADMIN_USER

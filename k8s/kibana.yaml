@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kibana
-  namespace: redis-api
+  namespace: redis-api-logging
 spec:
   selector:
     matchLabels:
@@ -21,8 +21,6 @@ spec:
           env:
             - name: ELASTICSEARCH_HOSTS
               value: '["http://elasticsearch:9200"]'
-            # Kibana 8.x forbids the elastic superuser — use kibana_system.
-            # Password is set by the elasticsearch-setup Job.
             - name: ELASTICSEARCH_USERNAME
               value: kibana_system
             - name: ELASTICSEARCH_PASSWORD
@@ -30,19 +28,35 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: ELASTIC_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
           readinessProbe:
             httpGet:
               path: /api/status
               port: 5601
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: kibana
-  namespace: redis-api
+  namespace: redis-api-logging
 spec:
   type: NodePort
   selector:

@@ -5,7 +5,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: logstash
-  namespace: redis-api
+  namespace: redis-api-logging
 spec:
   selector:
     matchLabels:
@@ -38,6 +38,13 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: ELASTIC_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 640Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
           volumeMounts:
             - name: config
               mountPath: /usr/share/logstash/pipeline/logstash.conf
@@ -48,7 +55,16 @@ spec:
               port: 9600
             initialDelaySeconds: 60
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /_node/stats
+              port: 9600
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: config
           configMap:
@@ -58,7 +74,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: logstash
-  namespace: redis-api
+  namespace: redis-api-logging
 spec:
   selector:
     app: logstash

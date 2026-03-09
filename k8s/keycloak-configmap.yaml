@@ -5,7 +5,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: keycloak-realm
-  namespace: redis-api
+  namespace: redis-api-infra
 data:
   realm-export.json: |
     {
@@ -115,13 +115,11 @@ data:
       ]
     }
 ---
-# init.py — runs once after Keycloak is healthy to replace placeholder
-# client secrets with real values sourced from app-secrets.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: keycloak-init-script
-  namespace: redis-api
+  namespace: redis-api-infra
 data:
   init.py: |
     #!/usr/bin/env python3

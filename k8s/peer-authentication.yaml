@@ -1,11 +1,29 @@
-# Enforce STRICT mTLS for the entire redis-api namespace.
+# Enforce STRICT mTLS for all three namespaces.
 # Every pod-to-pod connection must present a valid Istio-issued X.509
 # certificate. Plaintext connections are rejected at the sidecar proxy.
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
   name: default
-  namespace: redis-api
+  namespace: redis-api-infra
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: redis-api-logging
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: redis-api-app
 spec:
   mtls:
     mode: STRICT

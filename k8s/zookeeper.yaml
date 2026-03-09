@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: zookeeper
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     matchLabels:
@@ -13,6 +13,7 @@ spec:
         app: zookeeper
     spec:
       serviceAccountName: zookeeper
+      enableServiceLinks: false
       containers:
         - name: zookeeper
           image: confluentinc/cp-zookeeper:7.6.0
@@ -23,17 +24,33 @@ spec:
               value: "2181"
             - name: ZOOKEEPER_TICK_TIME
               value: "2000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           readinessProbe:
             exec:
-              command: [bash, -c, "echo ruok | nc localhost 2181 | grep imok"]
+              command: [bash, -c, "echo srvr | nc localhost 2181 | grep Mode"]
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: [bash, -c, "echo srvr | nc localhost 2181 | grep Mode"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: zookeeper
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     app: zookeeper

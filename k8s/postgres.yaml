@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -13,7 +13,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     matchLabels:
@@ -45,6 +45,13 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -55,6 +62,15 @@ spec:
               command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -67,7 +83,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: redis-api
+  namespace: redis-api-infra
 spec:
   selector:
     app: postgres
@@ -75,12 +91,11 @@ spec:
     - port: 5432
       targetPort: 5432
 ---
-# Creates the 'keycloak' database alongside 'orders' on first init.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
-  namespace: redis-api
+  namespace: redis-api-infra
 data:
   init-keycloak.sql: |
     CREATE DATABASE keycloak;

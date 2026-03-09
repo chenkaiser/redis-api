@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: logstash-config
-  namespace: redis-api
+  namespace: redis-api-logging
 data:
   logstash.conf: |
     input {

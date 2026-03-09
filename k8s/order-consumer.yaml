@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: order-consumer
-  namespace: redis-api
+  namespace: redis-api-app
 spec:
   selector:
     matchLabels:
@@ -20,9 +20,9 @@ spec:
           env:
             - name: NODE_ENV
               value: production
-            # Kafka
+            # Kafka (redis-api-infra namespace)
             - name: KAFKA_BROKER
-              value: kafka:9092
+              value: kafka.redis-api-infra.svc.cluster.local:9092
             - name: KAFKA_USER
               valueFrom:
                 secretKeyRef:
@@ -33,9 +33,9 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: KAFKA_PASSWORD
-            # Postgres
+            # Postgres (redis-api-infra namespace)
             - name: POSTGRES_HOST
-              value: postgres
+              value: postgres.redis-api-infra.svc.cluster.local
             - name: POSTGRES_PORT
               value: "5432"
             - name: POSTGRES_DB
@@ -53,3 +53,17 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "process.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3

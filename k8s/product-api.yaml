@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: product-api
-  namespace: redis-api
+  namespace: redis-api-app
 spec:
   selector:
     matchLabels:
@@ -26,9 +26,9 @@ spec:
               value: info
             - name: AUTH_PROVIDER_TYPE
               value: keycloak
-            # Redis
+            # Redis (redis-api-infra namespace)
             - name: REDIS_HOST
-              value: redis
+              value: redis.redis-api-infra.svc.cluster.local
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_PASSWORD
@@ -36,9 +36,9 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: REDIS_PASSWORD
-            # Kafka
+            # Kafka (redis-api-infra namespace)
             - name: KAFKA_BROKER
-              value: kafka:9092
+              value: kafka.redis-api-infra.svc.cluster.local:9092
             - name: KAFKA_USER
               valueFrom:
                 secretKeyRef:
@@ -49,15 +49,15 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: KAFKA_PASSWORD
-            # Keycloak
+            # Keycloak (redis-api-infra namespace)
             - name: KEYCLOAK_JWKS_URI
-              value: http://keycloak:8080/realms/redis-api/protocol/openid-connect/certs
+              value: http://keycloak.redis-api-infra.svc.cluster.local:8080/realms/redis-api/protocol/openid-connect/certs
             - name: KEYCLOAK_ISSUER
-              value: http://keycloak:8080/realms/redis-api
+              value: http://keycloak.redis-api-infra.svc.cluster.local:8080/realms/redis-api
             - name: KEYCLOAK_AUDIENCE
               value: product-api
             - name: KEYCLOAK_INTERNAL_URL
-              value: http://keycloak:8080
+              value: http://keycloak.redis-api-infra.svc.cluster.local:8080
             - name: KEYCLOAK_REALM
               value: redis-api
             - name: KEYCLOAK_LOGIN_CLIENT_ID
@@ -69,18 +69,33 @@ spec:
                 secretKeyRef:
                   name: app-secrets
                   key: KEYCLOAK_ADMIN_CLIENT_SECRET
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
           readinessProbe:
             tcpSocket:
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: product-api
-  namespace: redis-api
+  namespace: redis-api-app
 spec:
   type: NodePort
   selector:
